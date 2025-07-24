@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Settings Editor</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: auto;
+      padding: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 200px;
+      margin-top: 10px;
+      font-family: monospace;
+    }
+    input[type="text"] {
+      width: 100%;
+      margin-bottom: 5px;
+    }
+    button {
+      margin-top: 10px;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🛠 Website Settings Editor</h1>
+
+<form id="settingsForm">
+  <label><input type="checkbox" id="show_form"> Show Contact Form</label><br>
+  <label><input type="checkbox" id="show_button"> Show Call-to-Action Button</label><br><br>
+
+  <label>Theme:</label>
+  <select id="theme">
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select><br><br>
+
+  <label>Number of Pictures:</label>
+  <input type="number" id="num_pics" min="0" max="10" value="2"><br>
+
+  <div id="pictureInputs"></div>
+
+  <button type="button" onclick="generateSettings()">Generate settings.json</button>
+</form>
+
+<h3>Generated JSON:</h3>
+<textarea id="output" readonly></textarea><br>
+
+<button onclick="downloadJSON()">⬇ Download JSON</button>
+<a id="editLink" target="_blank" style="display:none;"><button>✏️ Edit on GitHub</button></a>
+
+<script>
+  const output = document.getElementById('output');
+  const editLink = document.getElementById('editLink');
+
+  document.getElementById('num_pics').addEventListener('input', updatePictureFields);
+
+  function updatePictureFields() {
+    const container = document.getElementById('pictureInputs');
+    const count = parseInt(document.getElementById('num_pics').value);
+    container.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = `Picture URL ${i + 1}`;
+      input.id = `pic_${i}`;
+      container.appendChild(input);
+    }
+  }
+
+  function generateSettings() {
+    const show_form = document.getElementById('show_form').checked;
+    const show_button = document.getElementById('show_button').checked;
+    const theme = document.getElementById('theme').value;
+    const count = parseInt(document.getElementById('num_pics').value);
+    const pictures = [];
+
+    for (let i = 0; i < count; i++) {
+      const val = document.getElementById(`pic_${i}`).value.trim();
+      if (val) pictures.push(val);
+    }
+
+    const settings = {
+      show_form,
+      show_button,
+      theme,
+      pictures
+    };
+
+    const json = JSON.stringify(settings, null, 2);
+    output.value = json;
+
+    const ghURL = `const ghURL = `https://github.com/will292929/test3/edit/main/https://github.com/will292929/test3
+/settings.json`;
+`;
+    editLink.href = ghURL;
+    editLink.style.display = 'inline-block';
+  }
+
+  function downloadJSON() {
+    const blob = new Blob([output.value], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = 'settings.json';
+    a.href = url;
+    a.click();
+  }
+
+  // Initialize fields on load
+  updatePictureFields();
+</script>
+
+</body>
+</html>
