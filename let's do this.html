@@ -13,6 +13,7 @@
     .edit-overlay { position: fixed; min-width: 320px; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 1px solid #ccc; padding: 20px; z-index: 2000; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
     .edit-overlay select, .edit-overlay button { margin-top: 10px; margin-right: 10px; }
     .dormant { display: none !important; }
+    .dormant-revealed { outline: 2px dotted #e67e22 !important; display: block !important; background: #fffbe6 !important; color: #e67e22 !important; }
   </style>
 </head>
 <body>
@@ -28,6 +29,34 @@ if (TOKEN) localStorage.setItem('github_token', TOKEN);
 
 const frame = document.getElementById('pageFrame');
 let spaceHeld = false, sha = '';
+
+// Dormant toggle button
+const dormantBtn = document.createElement('button');
+dormantBtn.textContent = "👁️ Show Dormant";
+dormantBtn.style.position = "fixed";
+dormantBtn.style.bottom = "65px";
+dormantBtn.style.right = "20px";
+dormantBtn.style.zIndex = "1001";
+document.body.appendChild(dormantBtn);
+
+let dormantVisible = false;
+function showDormantElements(show) {
+  const doc = frame.contentDocument;
+  doc.querySelectorAll('.dormant').forEach(el => {
+    if (show) {
+      el.style.display = '';
+      el.classList.add('dormant-revealed');
+    } else {
+      el.style.display = '';
+      el.classList.remove('dormant-revealed');
+    }
+  });
+}
+dormantBtn.onclick = () => {
+  dormantVisible = !dormantVisible;
+  showDormantElements(dormantVisible);
+  dormantBtn.textContent = dormantVisible ? "🙈 Hide Dormant" : "👁️ Show Dormant";
+};
 
 window.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!spaceHeld) spaceHeld=true; else { let f=prompt('Filename to edit:', FILE_PATH); if(f){FILE_PATH=f; loadHTML();}} }
@@ -56,11 +85,12 @@ frame.onload = () => {
   // Remove any leftover overlays/backdrops
   document.querySelectorAll('.edit-backdrop, .edit-overlay').forEach(el => el.remove());
 
-  // Only add editor to leaf nodes, and skip dormant ones
+  // Only add editor to leaf nodes, skip dormant (unless revealed)
   doc.querySelectorAll('a,img,button,span,p,div').forEach(el=>{
     const tag = el.tagName.toLowerCase();
     if ((tag === 'div' || tag === 'span' || tag === 'p') && el.children.length) return;
-    if (el.classList.contains('dormant')) return;
+    // Don't activate editing for hidden dormant elements unless revealed
+    if (el.classList.contains('dormant') && !el.classList.contains('dormant-revealed')) return;
 
     el.addEventListener('mouseover',()=>el.classList.add('hover-highlight'));
     el.addEventListener('mouseout',()=>el.classList.remove('hover-highlight'));
@@ -94,6 +124,7 @@ frame.onload = () => {
           <option value="text">Text</option>
           <option value="browse">Browse & Upload Image</option>
           <option value="dormant">Make Dormant</option>
+          <option value="restore">Restore</option>
         </select>
         <button id="editOk">OK</button>
         <input type="file" id="imgInput" accept="image/*" style="display:none; margin-top:10px;" />
@@ -157,19 +188,34 @@ frame.onload = () => {
         }
         else if (choice === 'dormant') {
           el.classList.add('dormant');
+          el.classList.remove('dormant-revealed');
           if (attr) el.removeAttribute(attr);
           el.innerText = '';
+        }
+        else if (choice === 'restore') {
+          el.classList.remove('dormant');
+          el.classList.remove('dormant-revealed');
+          el.style.display = '';
         }
       };
     });
   });
 };
 
-// Commit HTML
+// Commit HTML (inject dormant style before commit)
 const commitBtn=document.getElementById('commitBtn');
 commitBtn.onclick=async()=>{
   try{
-    const newHTML=frame.contentDocument.documentElement.outerHTML;
+    const doc = frame.contentDocument;
+    const dormantStyle = '.dormant { display: none !important; } .dormant-revealed { outline: 2px dotted #e67e22 !important; display: block !important; background: #fffbe6 !important; color: #e67e22 !important; }';
+    let head = doc.querySelector('head');
+    if (head && !doc.querySelector('style[data-dormant]')) {
+      const style = doc.createElement('style');
+      style.setAttribute('data-dormant', 'yes');
+      style.textContent = dormantStyle;
+      head.appendChild(style);
+    }
+    const newHTML=doc.documentElement.outerHTML;
     const enc=btoa(unescape(encodeURIComponent(newHTML)));
     await apiCommit(FILE_PATH,enc,'Commit from editor');
     alert('✅Committed'); await loadHTML();
