@@ -45,7 +45,7 @@
 <script>
 const USERNAME = "will292929";
 const REPO = "test3";
-const FILE_PATH = "index.html";
+let FILE_PATH = "index.html";
 const BRANCH = "main";
 
 let TOKEN = localStorage.getItem("github_token") || "";
@@ -59,12 +59,39 @@ if (!TOKEN) {
 }
 
 const frame = document.getElementById('pageFrame');
+let spaceHeld = false;
+
+// Monitor if space is held down
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!spaceHeld) {
+      spaceHeld = true;
+      alert("Navigation mode enabled. Press space again to choose a new file to edit.");
+    } else {
+      const newFile = prompt("Enter the filename you want to edit (e.g., index.html, about.html):", FILE_PATH);
+      if (newFile) {
+        FILE_PATH = newFile;
+        loadHTML();
+      }
+    }
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') {
+    spaceHeld = false;
+  }
+});
 let originalHTML = "";
 let sha = "";
 
 // Load the file from GitHub
 async function loadHTML() {
-  const res = await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`);
+  const res = await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`, {
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`
+    }
+  });
   const data = await res.json();
   originalHTML = atob(data.content);
   sha = data.sha;
@@ -78,17 +105,37 @@ async function loadHTML() {
 frame.onload = () => {
   const doc = frame.contentDocument || frame.contentWindow.document;
 
-  doc.querySelectorAll('a, img').forEach(el => {
+  doc.querySelectorAll('a, img, button, span, div, p').forEach(el => {
     el.addEventListener('mouseover', () => el.classList.add('hover-highlight'));
     el.addEventListener('mouseout', () => el.classList.remove('hover-highlight'));
     el.addEventListener('click', e => {
       e.preventDefault();
       const type = el.tagName.toLowerCase();
-      const attr = type === 'a' ? 'href' : 'src';
-      const current = el.getAttribute(attr);
-      const newVal = prompt(`Edit ${attr}:`, current);
-      if (newVal !== null) el.setAttribute(attr, newVal);
+      let attr = null;
+      if (type === 'a') attr = 'href';
+      else if (type === 'img') attr = 'src';
+
+      const choice = prompt(`What do you want to change?
+1 = URL
+2 = Text
+3 = Browse Google Drive
+4 = Make dormant (remove link/text)`, "1");
+      if (choice === "1" && attr) {
+        const current = el.getAttribute(attr);
+        const newVal = prompt(`Edit ${attr}:`, current);
+        if (newVal !== null) el.setAttribute(attr, newVal);
+      } else if (choice === "2") {
+        const newText = prompt("Edit text:", el.innerText);
+        if (newText !== null) el.innerText = newText;
+      } else if (choice === "3" && attr) {
+        const gdrive = prompt("Paste a Google Drive link:", "https://drive.google.com/file/d/.../view?usp=sharing");
+        if (gdrive !== null) el.setAttribute(attr, gdrive);
+      } else if (choice === "4") {
+        if (attr) el.removeAttribute(attr);
+        el.innerText = "";
+      }
     });
+  });
   });
 };
 
@@ -115,7 +162,7 @@ commitBtn.onclick = async () => {
 
   if (res.ok) {
     alert("✅ Changes committed to GitHub!");
-    loadHTML(); // reload with new sha
+    await loadHTML(); // reload and update SHA
   } else {
     alert("❌ Commit failed. Check token or permissions.");
     console.error(await res.json());
