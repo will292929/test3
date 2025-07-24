@@ -30,7 +30,6 @@ if (TOKEN) localStorage.setItem('github_token', TOKEN);
 const frame = document.getElementById('pageFrame');
 let spaceHeld = false, sha = '';
 
-// Dormant toggle button
 const dormantBtn = document.createElement('button');
 dormantBtn.textContent = "👁️ Show Dormant";
 dormantBtn.style.position = "fixed";
@@ -41,9 +40,11 @@ document.body.appendChild(dormantBtn);
 
 let dormantVisible = false;
 
-// Shared edit handler for ALL elements
 function attachEditHandler(el) {
-  // Prevent duplicate handlers
+  // Remove old handlers to prevent duplicate listeners
+  el.replaceWith(el.cloneNode(true));
+  el = frame.contentDocument.querySelector(`[data-uuid='${el.getAttribute('data-uuid')}']`) || el;
+
   if (el.hasAttribute('data-editor-attached')) return;
   el.setAttribute('data-editor-attached','yes');
 
@@ -53,25 +54,21 @@ function attachEditHandler(el) {
     if(spaceHeld) return;
     e.preventDefault();
 
-    // Remove overlays/backdrops
     document.querySelectorAll('.edit-backdrop, .edit-overlay').forEach(el => el.remove());
 
     const type=el.tagName.toLowerCase();
     const attr=type==='a'?'href':type==='img'?'src':null;
 
-    // Create backdrop and overlay
     const backdrop=document.createElement('div');
     const overlay=document.createElement('div');
     backdrop.className='edit-backdrop'; overlay.className='edit-overlay';
 
-    // Position overlay near click, not offscreen
     const y = Math.min(e.clientY + 10, window.innerHeight - 180);
     const x = Math.min(e.clientX + 10, window.innerWidth - 350);
     overlay.style.top = y + 'px';
     overlay.style.left = x + 'px';
     overlay.style.transform = 'none';
 
-    // Dynamic dropdown: always include restore if dormant
     overlay.innerHTML = `
       <label style="margin-right:12px;">Change:</label>
       <select id="editChoice">
@@ -88,14 +85,12 @@ function attachEditHandler(el) {
 
     document.body.append(backdrop, overlay);
 
-    // Show/hide file input when selecting "browse"
     const select = overlay.querySelector('#editChoice');
     const imgInput = overlay.querySelector('#imgInput');
     select.onchange = () => {
       imgInput.style.display = (select.value === 'browse') ? 'block' : 'none';
     };
 
-    // Clean up overlay
     backdrop.onclick = () => { overlay.remove(); backdrop.remove(); };
 
     document.getElementById('editOk').onclick = async () => {
@@ -109,7 +104,6 @@ function attachEditHandler(el) {
         if (newVal != null) {
           if (attr) el.setAttribute(attr, newVal);
           else {
-            // Wrap in a link
             const wrapper = document.createElement('a');
             wrapper.href = newVal;
             wrapper.innerHTML = el.innerHTML;
@@ -140,7 +134,7 @@ function attachEditHandler(el) {
           };
           reader.readAsDataURL(file);
         };
-        return; // Wait for input
+        return;
       }
       else if (choice === 'dormant') {
         el.classList.add('dormant');
@@ -153,9 +147,52 @@ function attachEditHandler(el) {
         el.classList.remove('dormant-revealed');
         el.style.display = '';
       }
+      // After any change, reattach handlers to all elements!
+      setTimeout(() => setupEditHandlers(), 100);
     };
   });
 }
+
+// Unique ID assignment for precise event targeting
+function assignUUIDs(doc) {
+  let uuid = 1;
+  doc.querySelectorAll('a,img,button,span,p,div').forEach(el => {
+    if (!el.hasAttribute('data-uuid')) el.setAttribute('data-uuid', 'uid' + (uuid++));
+  });
+}
+
+function setupEditHandlers() {
+  const doc = frame.contentDocument;
+  assignUUIDs(doc);
+  doc.querySelectorAll('a,img,button,span,p,div').forEach(el => {
+    const tag = el.tagName.toLowerCase();
+    if ((tag === 'div' || tag === 'span' || tag === 'p') && el.children.length) return;
+    // Always attach if visible or dormant is revealed
+    if (el.classList.contains('dormant') && !dormantVisible) return;
+    attachEditHandler(el);
+  });
+  if (dormantVisible) showDormantElements(true);
+}
+
+function showDormantElements(show) {
+  const doc = frame.contentDocument;
+  doc.querySelectorAll('.dormant').forEach(el => {
+    if (show) {
+      el.style.display = '';
+      el.classList.add('dormant-revealed');
+      attachEditHandler(el);
+    } else {
+      el.style.display = '';
+      el.classList.remove('dormant-revealed');
+    }
+  });
+}
+
+dormantBtn.onclick = () => {
+  dormantVisible = !dormantVisible;
+  showDormantElements(dormantVisible);
+  dormantBtn.textContent = dormantVisible ? "🙈 Hide Dormant" : "👁️ Show Dormant";
+};
 
 window.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!spaceHeld) spaceHeld=true; else { let f=prompt('Filename to edit:', FILE_PATH); if(f){FILE_PATH=f; loadHTML();}} }
@@ -182,22 +219,13 @@ async function loadHTML(){
 
 frame.onload = () => {
   const doc = frame.contentDocument;
-  // Remove any leftover overlays/backdrops
+  // Remove overlays
   document.querySelectorAll('.edit-backdrop, .edit-overlay').forEach(el => el.remove());
-
-  // Attach handlers to all eligible elements (including dormant if visible)
-  doc.querySelectorAll('a,img,button,span,p,div').forEach(el=>{
-    const tag = el.tagName.toLowerCase();
-    if ((tag === 'div' || tag === 'span' || tag === 'p') && el.children.length) return;
-    // Only skip dormant elements if NOT in show mode
-    if (el.classList.contains('dormant') && !el.classList.contains('dormant-revealed')) return;
-    attachEditHandler(el);
-  });
-  // Reapply visible dormant style if toggled
+  setupEditHandlers();
+  // Ensure dormant style if visible
   if (dormantVisible) showDormantElements(true);
 };
 
-// Commit HTML (inject dormant style before commit)
 const commitBtn=document.getElementById('commitBtn');
 commitBtn.onclick=async()=>{
   try{
