@@ -13,7 +13,7 @@
     .edit-overlay { position: fixed; min-width: 320px; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 1px solid #ccc; padding: 20px; z-index: 2000; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
     .edit-overlay select, .edit-overlay button { margin-top: 10px; margin-right: 10px; }
     .dormant { display: none !important; }
-    .dormant-revealed { outline: 2px dotted #e67e22 !important; display: block !important; background: #fffbe6 !important; color: #e67e22 !important; }
+    .dormant-revealed { outline: 2px dotted #e67e22 !important; display: block !important; background: #fffbe6 !important; color: #e67e22 !important; cursor: pointer !important;}
   </style>
 </head>
 <body>
@@ -40,23 +40,122 @@ dormantBtn.style.zIndex = "1001";
 document.body.appendChild(dormantBtn);
 
 let dormantVisible = false;
-function showDormantElements(show) {
-  const doc = frame.contentDocument;
-  doc.querySelectorAll('.dormant').forEach(el => {
-    if (show) {
-      el.style.display = '';
-      el.classList.add('dormant-revealed');
-    } else {
-      el.style.display = '';
-      el.classList.remove('dormant-revealed');
-    }
+
+// Shared edit handler for ALL elements
+function attachEditHandler(el) {
+  // Prevent duplicate handlers
+  if (el.hasAttribute('data-editor-attached')) return;
+  el.setAttribute('data-editor-attached','yes');
+
+  el.addEventListener('mouseover',()=>el.classList.add('hover-highlight'));
+  el.addEventListener('mouseout',()=>el.classList.remove('hover-highlight'));
+  el.addEventListener('click', async e=>{
+    if(spaceHeld) return;
+    e.preventDefault();
+
+    // Remove overlays/backdrops
+    document.querySelectorAll('.edit-backdrop, .edit-overlay').forEach(el => el.remove());
+
+    const type=el.tagName.toLowerCase();
+    const attr=type==='a'?'href':type==='img'?'src':null;
+
+    // Create backdrop and overlay
+    const backdrop=document.createElement('div');
+    const overlay=document.createElement('div');
+    backdrop.className='edit-backdrop'; overlay.className='edit-overlay';
+
+    // Position overlay near click, not offscreen
+    const y = Math.min(e.clientY + 10, window.innerHeight - 180);
+    const x = Math.min(e.clientX + 10, window.innerWidth - 350);
+    overlay.style.top = y + 'px';
+    overlay.style.left = x + 'px';
+    overlay.style.transform = 'none';
+
+    // Dynamic dropdown: always include restore if dormant
+    overlay.innerHTML = `
+      <label style="margin-right:12px;">Change:</label>
+      <select id="editChoice">
+        <option value="">Cancel</option>
+        <option value="url">URL</option>
+        <option value="text">Text</option>
+        <option value="browse">Browse & Upload Image</option>
+        <option value="dormant">Make Dormant</option>
+        ${el.classList.contains('dormant') || el.classList.contains('dormant-revealed') ? '<option value="restore">Restore</option>' : ''}
+      </select>
+      <button id="editOk">OK</button>
+      <input type="file" id="imgInput" accept="image/*" style="display:none; margin-top:10px;" />
+    `;
+
+    document.body.append(backdrop, overlay);
+
+    // Show/hide file input when selecting "browse"
+    const select = overlay.querySelector('#editChoice');
+    const imgInput = overlay.querySelector('#imgInput');
+    select.onchange = () => {
+      imgInput.style.display = (select.value === 'browse') ? 'block' : 'none';
+    };
+
+    // Clean up overlay
+    backdrop.onclick = () => { overlay.remove(); backdrop.remove(); };
+
+    document.getElementById('editOk').onclick = async () => {
+      const choice = select.value;
+      overlay.remove(); backdrop.remove();
+      if (!choice) return;
+
+      if (choice === 'url') {
+        let current = attr ? el.getAttribute(attr) || '' : '';
+        const newVal = prompt('Enter new URL:', current);
+        if (newVal != null) {
+          if (attr) el.setAttribute(attr, newVal);
+          else {
+            // Wrap in a link
+            const wrapper = document.createElement('a');
+            wrapper.href = newVal;
+            wrapper.innerHTML = el.innerHTML;
+            el.innerHTML = '';
+            el.appendChild(wrapper);
+          }
+        }
+      }
+      else if (choice === 'text') {
+        const nt = prompt('Edit text:', el.innerText);
+        if (nt != null) el.innerText = nt;
+      }
+      else if (choice === 'browse') {
+        imgInput.click();
+        imgInput.onchange = async () => {
+          const file = imgInput.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const b64 = reader.result.split(',')[1];
+            const fname = file.name.replace(/[^a-z0-9.\\-_]/gi, '_');
+            await apiCommit(`images/${fname}`, b64, 'Upload image ' + fname);
+            if (attr) el.setAttribute(attr, `images/${fname}`);
+            else if (el.tagName.toLowerCase() !== 'img') {
+              el.innerHTML = `<img src="images/${fname}" alt="" />`;
+            }
+            alert('✅ Image uploaded and set!');
+          };
+          reader.readAsDataURL(file);
+        };
+        return; // Wait for input
+      }
+      else if (choice === 'dormant') {
+        el.classList.add('dormant');
+        el.classList.remove('dormant-revealed');
+        if (attr) el.removeAttribute(attr);
+        el.innerText = '';
+      }
+      else if (choice === 'restore') {
+        el.classList.remove('dormant');
+        el.classList.remove('dormant-revealed');
+        el.style.display = '';
+      }
+    };
   });
 }
-dormantBtn.onclick = () => {
-  dormantVisible = !dormantVisible;
-  showDormantElements(dormantVisible);
-  dormantBtn.textContent = dormantVisible ? "🙈 Hide Dormant" : "👁️ Show Dormant";
-};
 
 window.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!spaceHeld) spaceHeld=true; else { let f=prompt('Filename to edit:', FILE_PATH); if(f){FILE_PATH=f; loadHTML();}} }
@@ -71,135 +170,31 @@ async function apiCommit(path, contentB64, message){
   return res.ok?await res.json():Promise.reject(await res.json());
 }
 
-async function loadHTML(){ try{
+async function loadHTML(){
+  try{
     const r=await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`,{ headers:{ 'Authorization':`Bearer ${TOKEN}` }});
     const j=await r.json();
     const html=atob(j.content);
     sha=j.sha;
     frame.src=URL.createObjectURL(new Blob([html],{type:'text/html'}));
-  }catch(e){alert('Load failed:'+e);} }
+  }catch(e){alert('Load failed:'+e);}
+}
 
 frame.onload = () => {
   const doc = frame.contentDocument;
-
   // Remove any leftover overlays/backdrops
   document.querySelectorAll('.edit-backdrop, .edit-overlay').forEach(el => el.remove());
 
-  // Only add editor to leaf nodes, skip dormant (unless revealed)
+  // Attach handlers to all eligible elements (including dormant if visible)
   doc.querySelectorAll('a,img,button,span,p,div').forEach(el=>{
     const tag = el.tagName.toLowerCase();
     if ((tag === 'div' || tag === 'span' || tag === 'p') && el.children.length) return;
-    // Don't activate editing for hidden dormant elements unless revealed
+    // Only skip dormant elements if NOT in show mode
     if (el.classList.contains('dormant') && !el.classList.contains('dormant-revealed')) return;
-
-    el.addEventListener('mouseover',()=>el.classList.add('hover-highlight'));
-    el.addEventListener('mouseout',()=>el.classList.remove('hover-highlight'));
-    el.addEventListener('click', async e=>{
-      if(spaceHeld) return;
-      e.preventDefault();
-
-      // Remove existing overlays/backdrops
-      document.querySelectorAll('.edit-backdrop, .edit-overlay').forEach(el => el.remove());
-
-      const type=el.tagName.toLowerCase();
-      const attr=type==='a'?'href':type==='img'?'src':null;
-
-      // Create backdrop and overlay
-      const backdrop=document.createElement('div');
-      const overlay=document.createElement('div');
-      backdrop.className='edit-backdrop'; overlay.className='edit-overlay';
-
-      // Position overlay near click, not offscreen
-      const y = Math.min(e.clientY + 10, window.innerHeight - 180);
-      const x = Math.min(e.clientX + 10, window.innerWidth - 350);
-      overlay.style.top = y + 'px';
-      overlay.style.left = x + 'px';
-      overlay.style.transform = 'none';
-
-      overlay.innerHTML = `
-        <label style="margin-right:12px;">Change:</label>
-        <select id="editChoice">
-          <option value="">Cancel</option>
-          <option value="url">URL</option>
-          <option value="text">Text</option>
-          <option value="browse">Browse & Upload Image</option>
-          <option value="dormant">Make Dormant</option>
-          <option value="restore">Restore</option>
-        </select>
-        <button id="editOk">OK</button>
-        <input type="file" id="imgInput" accept="image/*" style="display:none; margin-top:10px;" />
-      `;
-
-      document.body.append(backdrop, overlay);
-
-      // Show/hide file input when selecting "browse"
-      const select = overlay.querySelector('#editChoice');
-      const imgInput = overlay.querySelector('#imgInput');
-      select.onchange = () => {
-        imgInput.style.display = (select.value === 'browse') ? 'block' : 'none';
-      };
-
-      // Clean up overlay
-      backdrop.onclick = () => { overlay.remove(); backdrop.remove(); };
-
-      document.getElementById('editOk').onclick = async () => {
-        const choice = select.value;
-        overlay.remove(); backdrop.remove();
-        if (!choice) return;
-
-        if (choice === 'url') {
-          let current = attr ? el.getAttribute(attr) || '' : '';
-          const newVal = prompt('Enter new URL:', current);
-          if (newVal != null) {
-            if (attr) el.setAttribute(attr, newVal);
-            else {
-              // Wrap in a link
-              const wrapper = document.createElement('a');
-              wrapper.href = newVal;
-              wrapper.innerHTML = el.innerHTML;
-              el.innerHTML = '';
-              el.appendChild(wrapper);
-            }
-          }
-        }
-        else if (choice === 'text') {
-          const nt = prompt('Edit text:', el.innerText);
-          if (nt != null) el.innerText = nt;
-        }
-        else if (choice === 'browse') {
-          imgInput.click();
-          imgInput.onchange = async () => {
-            const file = imgInput.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onloadend = async () => {
-              const b64 = reader.result.split(',')[1];
-              const fname = file.name.replace(/[^a-z0-9.\\-_]/gi, '_');
-              await apiCommit(`images/${fname}`, b64, 'Upload image ' + fname);
-              if (attr) el.setAttribute(attr, `images/${fname}`);
-              else if (el.tagName.toLowerCase() !== 'img') {
-                el.innerHTML = `<img src="images/${fname}" alt="" />`;
-              }
-              alert('✅ Image uploaded and set!');
-            };
-            reader.readAsDataURL(file);
-          };
-          return; // Wait for input
-        }
-        else if (choice === 'dormant') {
-          el.classList.add('dormant');
-          el.classList.remove('dormant-revealed');
-          if (attr) el.removeAttribute(attr);
-          el.innerText = '';
-        }
-        else if (choice === 'restore') {
-          el.classList.remove('dormant');
-          el.classList.remove('dormant-revealed');
-          el.style.display = '';
-        }
-      };
-    });
+    attachEditHandler(el);
   });
+  // Reapply visible dormant style if toggled
+  if (dormantVisible) showDormantElements(true);
 };
 
 // Commit HTML (inject dormant style before commit)
@@ -207,7 +202,7 @@ const commitBtn=document.getElementById('commitBtn');
 commitBtn.onclick=async()=>{
   try{
     const doc = frame.contentDocument;
-    const dormantStyle = '.dormant { display: none !important; } .dormant-revealed { outline: 2px dotted #e67e22 !important; display: block !important; background: #fffbe6 !important; color: #e67e22 !important; }';
+    const dormantStyle = '.dormant { display: none !important; } .dormant-revealed { outline: 2px dotted #e67e22 !important; display: block !important; background: #fffbe6 !important; color: #e67e22 !important; cursor:pointer !important;}';
     let head = doc.querySelector('head');
     if (head && !doc.querySelector('style[data-dormant]')) {
       const style = doc.createElement('style');
