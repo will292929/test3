@@ -109,64 +109,67 @@ frame.onload = () => {
     el.addEventListener('mouseover', () => el.classList.add('hover-highlight'));
     el.addEventListener('mouseout', () => el.classList.remove('hover-highlight'));
     el.addEventListener('click', e => {
-  if (spaceHeld) return; // prevent edit while in navigation mode
-  e.preventDefault();
-  const type = el.tagName.toLowerCase();
-  let attr = null;
-  if (type === 'a') attr = 'href';
-  else if (type === 'img') attr = 'src';
+      if (spaceHeld) return; // prevent edit while in navigation mode
+      e.preventDefault();
+      const type = el.tagName.toLowerCase();
+      let attr = null;
+      if (type === 'a') attr = 'href';
+      else if (type === 'img') attr = 'src';
 
-  const overlay = document.createElement('div');
-overlay.style.position = 'fixed';
-overlay.style.top = '50%';
-overlay.style.left = '50%';
-overlay.style.transform = 'translate(-50%, -50%)';
-overlay.style.background = 'white';
-overlay.style.border = '1px solid #ccc';
-overlay.style.padding = '20px';
-overlay.style.zIndex = '9999';
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '50%';
+      overlay.style.left = '50%';
+      overlay.style.transform = 'translate(-50%, -50%)';
+      overlay.style.background = 'white';
+      overlay.style.border = '1px solid #ccc';
+      overlay.style.padding = '20px';
+      overlay.style.zIndex = '9999';
 
-const label = document.createElement('label');
-label.textContent = "What do you want to change? ";
+      const label = document.createElement('label');
+      label.textContent = "What do you want to change? ";
 
-const select = document.createElement('select');
-select.innerHTML = `
-  <option value="">Cancel</option>
-  <option value="1">URL</option>
-  <option value="2">Text</option>
-  <option value="3">Browse Google Drive</option>
-  <option value="4">Make dormant</option>
-`;
+      const select = document.createElement('select');
+      select.innerHTML = `
+        <option value="">Cancel</option>
+        <option value="1">URL</option>
+        <option value="2">Text</option>
+        <option value="3">Browse Google Drive</option>
+        <option value="4">Make dormant</option>
+      `;
 
-const submitBtn = document.createElement('button');
-submitBtn.textContent = 'OK';
-submitBtn.style.marginLeft = '10px';
+      const submitBtn = document.createElement('button');
+      submitBtn.textContent = 'OK';
+      submitBtn.style.marginLeft = '10px';
 
-overlay.appendChild(label);
-overlay.appendChild(select);
-overlay.appendChild(submitBtn);
-document.body.appendChild(overlay);
+      overlay.appendChild(label);
+      overlay.appendChild(select);
+      overlay.appendChild(submitBtn);
+      document.body.appendChild(overlay);
 
-submitBtn.onclick = () => {
-  const choice = select.value;
-  document.body.removeChild(overlay);
+      submitBtn.onclick = () => {
+        const choice = select.value;
+        document.body.removeChild(overlay);
 
-  if (!choice) return;
+        if (!choice) return;
 
-  if (choice === "1" && attr) {
-    const current = el.getAttribute(attr);
-    const newVal = prompt(`Edit ${attr}:`, current);
-    if (newVal !== null) el.setAttribute(attr, newVal);
-  } else if (choice === "2") {
-    const newText = prompt("Edit text:", el.innerText);
-    if (newText !== null) el.innerText = newText;
-  } else if (choice === "3" && attr) {
-    const gdrive = prompt("Paste a Google Drive link:", "https://drive.google.com/file/d/.../view?usp=sharing");
-    if (gdrive !== null) el.setAttribute(attr, gdrive);
-  } else if (choice === "4") {
-    if (attr) el.removeAttribute(attr);
-    el.innerText = "";
-  }
+        if (choice === "1" && attr) {
+          const current = el.getAttribute(attr);
+          const newVal = prompt(`Edit ${attr}:`, current);
+          if (newVal !== null) el.setAttribute(attr, newVal);
+        } else if (choice === "2") {
+          const newText = prompt("Edit text:", el.innerText);
+          if (newText !== null) el.innerText = newText;
+        } else if (choice === "3" && attr) {
+          const gdrive = prompt("Paste a Google Drive link:", "https://drive.google.com/file/d/.../view?usp=sharing");
+          if (gdrive !== null) el.setAttribute(attr, gdrive);
+        } else if (choice === "4") {
+          if (attr) el.removeAttribute(attr);
+          el.innerText = "";
+        }
+      };
+    });
+  });
 };
     }
   }
