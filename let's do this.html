@@ -2,117 +2,127 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Settings Editor</title>
+  <title>Visual GitHub Pages Editor</title>
   <style>
     body {
       font-family: sans-serif;
-      max-width: 600px;
-      margin: auto;
+      margin: 0;
+    }
+    #editor {
       padding: 20px;
     }
-    textarea {
+    #editor iframe {
       width: 100%;
-      height: 200px;
-      margin-top: 10px;
-      font-family: monospace;
+      height: 90vh;
+      border: none;
     }
-    input[type="text"] {
-      width: 100%;
-      margin-bottom: 5px;
+    #commitBtn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 999;
     }
-    button {
-      margin-top: 10px;
-      margin-right: 10px;
+    .hover-highlight {
+      outline: 2px dashed red;
     }
   </style>
 </head>
 <body>
 
-<h1>🛠 Website Settings Editor</h1>
+<div id="editor">
+  <iframe id="pageFrame"></iframe>
+</div>
 
-<form id="settingsForm">
-  <label><input type="checkbox" id="show_form"> Show Contact Form</label><br>
-  <label><input type="checkbox" id="show_button"> Show Call-to-Action Button</label><br><br>
-
-  <label>Theme:</label>
-  <select id="theme">
-    <option value="light">Light</option>
-    <option value="dark">Dark</option>
-  </select><br><br>
-
-  <label>Number of Pictures:</label>
-  <input type="number" id="num_pics" min="0" max="10" value="2"><br>
-
-  <div id="pictureInputs"></div>
-
-  <button type="button" onclick="generateSettings()">Generate settings.json</button>
-</form>
-
-<h3>Generated JSON:</h3>
-<textarea id="output" readonly></textarea><br>
-
-<button onclick="downloadJSON()">⬇ Download JSON</button>
-<a id="editLink" target="_blank" style="display:none;"><button>✏️ Edit on GitHub</button></a>
+<button id="commitBtn">💾 Commit Changes</button>
 
 <script>
-  const output = document.getElementById('output');
-  const editLink = document.getElementById('editLink');
+const USERNAME = "will292929";
+const REPO = "test3";
+const FILE_PATH = "index.html";
+const BRANCH = "main";
 
-  document.getElementById('num_pics').addEventListener('input', updatePictureFields);
-
-  function updatePictureFields() {
-    const container = document.getElementById('pictureInputs');
-    const count = parseInt(document.getElementById('num_pics').value);
-    container.innerHTML = '';
-    for (let i = 0; i < count; i++) {
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = `Picture URL ${i + 1}`;
-      input.id = `pic_${i}`;
-      container.appendChild(input);
-    }
+let TOKEN = localStorage.getItem("github_token") || "";
+if (!TOKEN) {
+  TOKEN = prompt("Enter your GitHub Personal Access Token:");
+  if (TOKEN) {
+    localStorage.setItem("github_token", TOKEN);
+  } else {
+    alert("No token provided. Cannot continue.");
   }
+}
 
-  function generateSettings() {
-    const show_form = document.getElementById('show_form').checked;
-    const show_button = document.getElementById('show_button').checked;
-    const theme = document.getElementById('theme').value;
-    const count = parseInt(document.getElementById('num_pics').value);
-    const pictures = [];
+const frame = document.getElementById('pageFrame');
+let originalHTML = "";
+let sha = "";
 
-    for (let i = 0; i < count; i++) {
-      const val = document.getElementById(`pic_${i}`).value.trim();
-      if (val) pictures.push(val);
-    }
+// Load the file from GitHub
+async function loadHTML() {
+  const res = await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`);
+  const data = await res.json();
+  originalHTML = atob(data.content);
+  sha = data.sha;
 
-    const settings = {
-      show_form,
-      show_button,
-      theme,
-      pictures
-    };
+  const blob = new Blob([originalHTML], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  frame.src = url;
+}
 
-    const json = JSON.stringify(settings, null, 2);
-    output.value = json;
+// Inject editor tools when iframe is loaded
+frame.onload = () => {
+  const doc = frame.contentDocument || frame.contentWindow.document;
 
-    const ghURL = `const ghURL = `https://github.com/will292929/test3/edit/main/https://github.com/will292929/test3
-/settings.json`;
-`;
-    editLink.href = ghURL;
-    editLink.style.display = 'inline-block';
+  doc.querySelectorAll('a, img').forEach(el => {
+    el.addEventListener('mouseover', () => el.classList.add('hover-highlight'));
+    el.addEventListener('mouseout', () => el.classList.remove('hover-highlight'));
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      const type = el.tagName.toLowerCase();
+      const attr = type === 'a' ? 'href' : 'src';
+      const current = el.getAttribute(attr);
+      const newVal = prompt(`Edit ${attr}:`, current);
+      if (newVal !== null) el.setAttribute(attr, newVal);
+    });
+  });
+};
+
+// Commit button
+const commitBtn = document.getElementById('commitBtn');
+commitBtn.onclick = async () => {
+  const doc = frame.contentDocument || frame.contentWindow.document;
+  const newHTML = doc.documentElement.outerHTML;
+  const encoded = btoa(unescape(encodeURIComponent(newHTML)));
+
+  const res = await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      message: "Commit from visual editor",
+      content: encoded,
+      sha: sha,
+      branch: BRANCH
+    })
+  });
+
+  if (res.ok) {
+    alert("✅ Changes committed to GitHub!");
+    loadHTML(); // reload with new sha
+  } else {
+    alert("❌ Commit failed. Check token or permissions.");
+    console.error(await res.json());
   }
+};
 
-  function downloadJSON() {
-    const blob = new Blob([output.value], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.download = 'settings.json';
-    a.href = url;
-    a.click();
-  }
-
-  // Initialize fields on load
-  updatePictureFields();
+loadHTML();
 </script>
 
 </body>
