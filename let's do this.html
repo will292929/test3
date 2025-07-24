@@ -7,13 +7,14 @@
     body {
       font-family: sans-serif;
       margin: 0;
+      overflow: hidden;
     }
     #editor {
       padding: 20px;
     }
     #editor iframe {
       width: 100%;
-      height: 90vh;
+      height: calc(100vh - 60px);
       border: none;
     }
     #commitBtn {
@@ -27,10 +28,20 @@
       border-radius: 5px;
       font-weight: bold;
       cursor: pointer;
-      z-index: 999;
+      z-index: 1000;
     }
     .hover-highlight {
       outline: 2px dashed red;
+    }
+    .edit-overlay {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 1px solid #ccc;
+      padding: 20px;
+      z-index: 2000;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
   </style>
 </head>
@@ -48,28 +59,29 @@ const REPO = "test3";
 let FILE_PATH = "index.html";
 const BRANCH = "main";
 
-let TOKEN = localStorage.getItem("github_token") || "";
+let TOKEN = localStorage.getItem("github_token");
 if (!TOKEN) {
   TOKEN = prompt("Enter your GitHub Personal Access Token:");
-  if (TOKEN) {
-    localStorage.setItem("github_token", TOKEN);
-  } else {
-    alert("No token provided. Cannot continue.");
-  }
+  if (TOKEN) localStorage.setItem("github_token", TOKEN);
+  else alert("No token provided. Editor will not function.");
 }
 
 const frame = document.getElementById('pageFrame');
 let spaceHeld = false;
+let originalHTML = "";
+let sha = "";
 
-// Monitor if space is held down
-window.addEventListener('keydown', (e) => {
+window.addEventListener('keydown', e => {
   if (e.code === 'Space') {
     e.preventDefault();
     if (!spaceHeld) {
       spaceHeld = true;
-      alert("Navigation mode enabled. Press space again to choose a new file to edit.");
+      // First hold: enable navigation mode only
     } else {
-      const newFile = prompt("Enter the filename you want to edit (e.g., index.html, about.html):", FILE_PATH);
+      const newFile = prompt(
+        "Enter filename to edit (e.g., index.html, about.html):",
+        FILE_PATH
+      );
       if (newFile) {
         FILE_PATH = newFile;
         loadHTML();
@@ -77,133 +89,116 @@ window.addEventListener('keydown', (e) => {
     }
   }
 });
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'Space') {
-    spaceHeld = false;
-  }
+window.addEventListener('keyup', e => {
+  if (e.code === 'Space') spaceHeld = false;
 });
-let originalHTML = "";
-let sha = "";
 
-// Load the file from GitHub
 async function loadHTML() {
-  const res = await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`, {
-    headers: {
-      'Authorization': `Bearer ${TOKEN}`
-    }
-  });
-  const data = await res.json();
-  originalHTML = atob(data.content);
-  sha = data.sha;
-
-  const blob = new Blob([originalHTML], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  frame.src = url;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`,
+      {
+        headers: { 'Authorization': `Bearer ${TOKEN}` }
+      }
+    );
+    const data = await res.json();
+    originalHTML = atob(data.content);
+    sha = data.sha;
+    const blob = new Blob([originalHTML], { type: 'text/html' });
+    frame.src = URL.createObjectURL(blob);
+  } catch (err) {
+    alert('Failed to load file: ' + err);
+  }
 }
 
-// Inject editor tools when iframe is loaded
 frame.onload = () => {
-  const doc = frame.contentDocument || frame.contentWindow.document;
-
+  const doc = frame.contentDocument;
   doc.querySelectorAll('a, img, button, span, div, p').forEach(el => {
     el.addEventListener('mouseover', () => el.classList.add('hover-highlight'));
     el.addEventListener('mouseout', () => el.classList.remove('hover-highlight'));
     el.addEventListener('click', e => {
-      if (spaceHeld) return; // prevent edit while in navigation mode
+      if (spaceHeld) return;
       e.preventDefault();
       const type = el.tagName.toLowerCase();
-      let attr = null;
-      if (type === 'a') attr = 'href';
-      else if (type === 'img') attr = 'src';
+      const attr = type === 'a' ? 'href' : type === 'img' ? 'src' : null;
 
+      // Create overlay
       const overlay = document.createElement('div');
-      overlay.style.position = 'fixed';
-      overlay.style.top = '50%';
-      overlay.style.left = '50%';
-      overlay.style.transform = 'translate(-50%, -50%)';
-      overlay.style.background = 'white';
-      overlay.style.border = '1px solid #ccc';
-      overlay.style.padding = '20px';
-      overlay.style.zIndex = '9999';
-
-      const label = document.createElement('label');
-      label.textContent = "What do you want to change? ";
-
-      const select = document.createElement('select');
-      select.innerHTML = `
-        <option value="">Cancel</option>
-        <option value="1">URL</option>
-        <option value="2">Text</option>
-        <option value="3">Browse Google Drive</option>
-        <option value="4">Make dormant</option>
+      overlay.className = 'edit-overlay';
+      overlay.innerHTML = `
+        <label>Change Type:</label>
+        <select id="editChoice">
+          <option value="">Cancel</option>
+          ${attr ? '<option value="url">URL</option>' : ''}
+          <option value="text">Text</option>
+          ${attr ? '<option value="gdrive">Google Drive Link</option>' : ''}
+          ${attr ? '<option value="dormant">Make Dormant</option>' : ''}
+        </select>
+        <button id="editOk">OK</button>
       `;
-
-      const submitBtn = document.createElement('button');
-      submitBtn.textContent = 'OK';
-      submitBtn.style.marginLeft = '10px';
-
-      overlay.appendChild(label);
-      overlay.appendChild(select);
-      overlay.appendChild(submitBtn);
       document.body.appendChild(overlay);
 
-      submitBtn.onclick = () => {
-        const choice = select.value;
+      document.getElementById('editOk').onclick = () => {
+        const choice = document.getElementById('editChoice').value;
         document.body.removeChild(overlay);
-
         if (!choice) return;
-
-        if (choice === "1" && attr) {
-          const current = el.getAttribute(attr);
+        if (choice === 'url' && attr) {
+          const current = el.getAttribute(attr) || '';
           const newVal = prompt(`Edit ${attr}:`, current);
           if (newVal !== null) el.setAttribute(attr, newVal);
-        } else if (choice === "2") {
-          const newText = prompt("Edit text:", el.innerText);
+        } else if (choice === 'text') {
+          const newText = prompt('Edit text:', el.innerText);
           if (newText !== null) el.innerText = newText;
-        } else if (choice === "3" && attr) {
-          const gdrive = prompt("Paste a Google Drive link:", "https://drive.google.com/file/d/.../view?usp=sharing");
-          if (gdrive !== null) el.setAttribute(attr, gdrive);
-        } else if (choice === "4") {
-          if (attr) el.removeAttribute(attr);
-          el.innerText = "";
+        } else if (choice === 'gdrive' && attr) {
+          const gdrive = prompt('Paste Google Drive link:','');
+          if (gdrive) el.setAttribute(attr, gdrive);
+        } else if (choice === 'dormant' && attr) {
+          el.removeAttribute(attr);
+          el.innerText = '';
         }
       };
     });
   });
-});
-  });
 };
 
-// Commit button
+// Commit changes
 const commitBtn = document.getElementById('commitBtn');
 commitBtn.onclick = async () => {
-  const doc = frame.contentDocument || frame.contentWindow.document;
-  const newHTML = doc.documentElement.outerHTML;
-  const encoded = btoa(unescape(encodeURIComponent(newHTML)));
+  try {
+    const doc = frame.contentDocument;
+    const newHTML = doc.documentElement.outerHTML;
+    const encoded = btoa(unescape(encodeURIComponent(newHTML)));
 
-  const res = await fetch(`https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${TOKEN}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      message: "Commit from visual editor",
-      content: encoded,
-      sha: sha,
-      branch: BRANCH
-    })
-  });
+    const res = await fetch(
+      `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: 'Commit from visual editor',
+          content: encoded,
+          sha: sha,
+          branch: BRANCH
+        })
+      }
+    );
 
-  if (res.ok) {
-    alert("✅ Changes committed to GitHub!");
-    await loadHTML(); // reload and update SHA
-  } else {
-    alert("❌ Commit failed. Check token or permissions.");
-    console.error(await res.json());
+    if (res.ok) {
+      alert('✅ Changes committed!');
+      await loadHTML();
+    } else {
+      alert('❌ Commit failed.');
+      console.error(await res.json());
+    }
+  } catch (err) {
+    alert('Error: ' + err);
   }
 };
 
+// Initial load
 loadHTML();
 </script>
 
