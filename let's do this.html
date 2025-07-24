@@ -33,6 +33,14 @@
     .hover-highlight {
       outline: 2px dashed red;
     }
+    .edit-backdrop {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.3);
+      z-index: 1999;
+    }
     .edit-overlay {
       position: fixed;
       top: 50%; left: 50%;
@@ -42,6 +50,9 @@
       padding: 20px;
       z-index: 2000;
       box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .edit-overlay select, .edit-overlay button {
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -74,32 +85,23 @@ let sha = "";
 window.addEventListener('keydown', e => {
   if (e.code === 'Space') {
     e.preventDefault();
-    if (!spaceHeld) {
-      spaceHeld = true;
-      // First hold: enable navigation mode only
-    } else {
+    if (!spaceHeld) spaceHeld = true;
+    else {
       const newFile = prompt(
         "Enter filename to edit (e.g., index.html, about.html):",
         FILE_PATH
       );
-      if (newFile) {
-        FILE_PATH = newFile;
-        loadHTML();
-      }
+      if (newFile) { FILE_PATH = newFile; loadHTML(); }
     }
   }
 });
-window.addEventListener('keyup', e => {
-  if (e.code === 'Space') spaceHeld = false;
-});
+window.addEventListener('keyup', e => { if (e.code === 'Space') spaceHeld = false; });
 
 async function loadHTML() {
   try {
     const res = await fetch(
       `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${FILE_PATH}`,
-      {
-        headers: { 'Authorization': `Bearer ${TOKEN}` }
-      }
+      { headers: { 'Authorization': `Bearer ${TOKEN}` } }
     );
     const data = await res.json();
     originalHTML = atob(data.content);
@@ -122,7 +124,11 @@ frame.onload = () => {
       const type = el.tagName.toLowerCase();
       const attr = type === 'a' ? 'href' : type === 'img' ? 'src' : null;
 
-      // Create overlay
+      // Create backdrop and overlay
+      const backdrop = document.createElement('div');
+      backdrop.className = 'edit-backdrop';
+      document.body.appendChild(backdrop);
+
       const overlay = document.createElement('div');
       overlay.className = 'edit-overlay';
       overlay.innerHTML = `
@@ -138,9 +144,16 @@ frame.onload = () => {
       `;
       document.body.appendChild(overlay);
 
+      // Close overlay on backdrop click
+      backdrop.onclick = () => {
+        document.body.removeChild(overlay);
+        document.body.removeChild(backdrop);
+      };
+
       document.getElementById('editOk').onclick = () => {
         const choice = document.getElementById('editChoice').value;
         document.body.removeChild(overlay);
+        document.body.removeChild(backdrop);
         if (!choice) return;
         if (choice === 'url' && attr) {
           const current = el.getAttribute(attr) || '';
@@ -177,12 +190,7 @@ commitBtn.onclick = async () => {
           'Authorization': `Bearer ${TOKEN}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          message: 'Commit from visual editor',
-          content: encoded,
-          sha: sha,
-          branch: BRANCH
-        })
+        body: JSON.stringify({ message: 'Commit from visual editor', content: encoded, sha: sha, branch: BRANCH })
       }
     );
 
