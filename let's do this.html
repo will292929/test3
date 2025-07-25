@@ -32,17 +32,15 @@
     .edit-overlay { position: fixed; min-width: 320px; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 1px solid #ccc; padding: 20px; z-index: 2000; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
     .edit-overlay select, .edit-overlay button { margin-top: 10px; margin-right: 10px; }
     .dormant {
-      opacity: 0 !important;
-      pointer-events: none !important;
-      transition: opacity 0.2s;
+      display: none !important;
     }
     .dormant-revealed {
-      opacity: 0.3 !important;
-      pointer-events: auto !important;
+      display: inline-block !important;
       outline: 2px dotted #e67e22 !important;
       background: #fffbe6 !important;
       color: #e67e22 !important;
-      cursor: pointer !important;
+      opacity: 0.8;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -154,6 +152,14 @@ function attachAllHandlers(doc) {
         else if (el.hasAttribute('data-link')) attr = 'data-link';
         else if (el.hasAttribute('onclick')) attr = 'onclick';
       }
+      else if (tag === 'div' && el.hasAttribute('src')) {
+        const innerA = el.querySelector('a');
+        if (innerA) {
+            attr = 'href';
+            el = innerA; // now edits will target the <a>
+        }
+      }
+
 
       // ⌨️ Spacebar link follow behavior
       if (fullSpaceHeld && !spaceJustUsed) {
@@ -295,13 +301,15 @@ function attachAllHandlers(doc) {
             el.innerText = originalText;
             el.removeAttribute('data-original-text');
           }
-          if (attr) {
-            const originalAttr = el.getAttribute(`data-original-${attr}`);
-            if (originalAttr) {
-              el.setAttribute(attr, originalAttr);
+
+          const attrs = ['src', 'href', 'data-link', 'onclick'];
+          atts.forEach(attr => {
+            const original = el.getAttribute(`data-original-${attr}`);
+            if (original) {
+              el.setAttribute(attr, original);
               el.removeAttribute(`data-original-${attr}`);
             }
-          }
+          });
         }
 
         setTimeout(() => attachAllHandlers(doc), 50);
@@ -316,13 +324,50 @@ function attachAllHandlers(doc) {
 
 
 function showDormantElements(show) {
-  const doc = frame.contentDocument;
-  doc.querySelectorAll('.dormant').forEach(el => {
-    if (show) el.classList.add('dormant-revealed');
-    else el.classList.remove('dormant-revealed');
+  const doc = frame.contentDocument || frame.contentWindow.document;
+  const dormantEls = doc.querySelectorAll('.dormant, .dormant-revealed');
+
+  dormantEls.forEach(el => {
+    if (show) {
+      // Convert .dormant ➜ .dormant-revealed
+      el.classList.remove('dormant');
+      el.classList.add('dormant-revealed');
+
+      // Restore text
+      const text = el.getAttribute('data-original-text');
+      if (text && el.innerText.trim() === '') {
+        el.innerText = text;
+      }
+
+      // Restore src, href, etc
+      const attrs = ['src', 'href', 'data-link', 'onclick'];
+      attrs.forEach(attr => {
+        const original = el.getAttribute(`data-original-${attr}`);
+        if (original && !el.getAttribute(attr)) {
+          el.setAttribute(attr, original);
+        }
+      });
+    } else {
+      // Convert .dormant-revealed ➜ .dormant
+      el.classList.add('dormant');
+      el.classList.remove('dormant-revealed');
+
+      // Hide content (do NOT delete original values)
+      el.innerText = '';
+      const attrs = ['src', 'href', 'data-link', 'onclick'];
+      attrs.forEach(attr => {
+        if (el.hasAttribute(attr)) {
+          el.removeAttribute(attr);
+        }
+      });
+    }
   });
+
   attachAllHandlers(doc);
 }
+
+
+
 
 
 const dormantBtn = document.createElement('button');
@@ -399,19 +444,26 @@ frame.onload = () => {
 const commitBtn=document.getElementById('commitBtn');
 commitBtn.onclick = async () => {
   try {
-    const doc = frame.contentDocument;
+    const doc = frame.contentDocument || frame.contentWindow.document;
 
+    // 🔍 Temporarily show all dormant content
+    const dormantEls = doc.querySelectorAll('.dormant, .dormant-revealed');
+    dormantEls.forEach(el => {
+      if (el.classList.contains('dormant-revealed')) {
+        el.classList.remove('dormant-revealed');
+        el.classList.add('dormant');
+      }
+    });
 
-    // Temporarily reveal dormant for serialization
-    const dormantEls = doc.querySelectorAll('.dormant');
-    dormantEls.forEach(el => el.classList.add('dormant-revealed'));
-
-
-    // Add style block if missing
+    // ✅ Ensure dormant style is injected (already correct)
     const dormantStyle = `.dormant {
+      display: none !important;
+      visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
-      transition: opacity 0.2s;
+      height: 0 !important;
+      width: 0 !important;
+      overflow: hidden !important;
     }
     .dormant-revealed {
       opacity: 0.3 !important;
@@ -429,24 +481,20 @@ commitBtn.onclick = async () => {
       head.appendChild(style);
     }
 
-
+    // 🔐 Serialize and commit HTML
     const newHTML = doc.documentElement.outerHTML;
     const enc = btoa(unescape(encodeURIComponent(newHTML)));
     await apiCommit(FILE_PATH, enc, 'Commit from editor');
-
-
     alert('✅ Committed');
 
-
-    // Re-hide dormant after commit
-    dormantEls.forEach(el => el.classList.remove('dormant-revealed'));
-
-
+    // 🔄 Reload content and restore view
     await loadHTML();
+
   } catch (e) {
     alert('Commit failed: ' + JSON.stringify(e));
   }
 };
+
 
 
 loadHTML();
