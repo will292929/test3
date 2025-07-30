@@ -3027,13 +3027,15 @@
     publishBtn.onclick = async () => {
       try {
         // Show loading state
-        const originalText = commitBtn.textContent;
-        const spinner = commitBtn.querySelector('.spinner');
+        const originalText = publishBtn.textContent;
+        const spinner = publishBtn.querySelector('.spinner');
         const commitStatus = document.getElementById('commitStatus');
         
-        commitBtn.textContent = '⏳ Committing...';
-        commitBtn.disabled = true;
-        spinner.style.display = 'inline-block';
+        publishBtn.textContent = '⏳ Committing...';
+        publishBtn.disabled = true;
+        if (spinner) {
+          spinner.style.display = 'inline-block';
+        }
         commitStatus.style.display = 'block';
         
         // Start progress animation
@@ -3180,11 +3182,13 @@
         showProgress(100);
         showStatus('✅ Successfully committed!', 3000, 'success');
         commitStatus.style.display = 'none';
-        commitBtn.textContent = '✅ Committed!';
-        spinner.style.display = 'none';
+        publishBtn.textContent = '✅ Committed!';
+        if (spinner) {
+          spinner.style.display = 'none';
+        }
         setTimeout(() => {
-          commitBtn.textContent = originalText;
-          commitBtn.disabled = false;
+          publishBtn.textContent = originalText;
+          publishBtn.disabled = false;
         }, 2000);
       } catch (e) {
         console.error('Commit failed:', e);
@@ -3194,9 +3198,11 @@
         showProgress(0);
         showStatus('❌ Commit failed!', 3000, 'error');
         commitStatus.style.display = 'none';
-        spinner.style.display = 'none';
-        commitBtn.textContent = originalText;
-        commitBtn.disabled = false;
+        if (spinner) {
+          spinner.style.display = 'none';
+        }
+        publishBtn.textContent = originalText;
+        publishBtn.disabled = false;
       }
     };
 
